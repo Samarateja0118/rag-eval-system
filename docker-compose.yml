@@ -1,0 +1,48 @@
+# docker compose up redis api          -> serve /search and /ask on :8000
+# docker compose run --rm models       -> download model weights into ./models
+# docker compose run --rm ingest       -> fetch PDFs, extract, chunk, embed, index (all chunk configs)
+# docker compose run --rm eval         -> retrieval + generation evals, writes ./results
+x-app: &app
+  build: .
+  image: rag-eval-system:latest
+  volumes:
+    - ./data:/app/data
+    - ./models:/app/models
+    - ./results:/app/results
+  environment:
+    RAG_REDIS_URL: redis://redis:6379/0
+    RAG_INDEX: ${RAG_INDEX:-tok256}
+    RAG_THREADS: ${RAG_THREADS:-4}
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  models:
+    <<: *app
+    profiles: ["setup"]
+    command: ["bash", "scripts/fetch_models.sh"]
+
+  ingest:
+    <<: *app
+    profiles: ["setup"]
+    command: ["sh", "-c", "python -m ragsys.cli fetch && python -m ragsys.cli build"]
+
+  api:
+    <<: *app
+    ports: ["8000:8000"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  eval:
+    <<: *app
+    profiles: ["eval"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["sh", "-c", "python -m ragsys.cli eval-retrieval && python -m ragsys.cli eval-generation && python scripts/latency_report.py"]

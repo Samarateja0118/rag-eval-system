@@ -1,0 +1,9 @@
+data/
+models/
+logs/
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+results/retrieval/rerank_cache_*.json
