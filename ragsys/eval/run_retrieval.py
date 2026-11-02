@@ -69,6 +69,8 @@ def run(
                     rerank_cache[key] = scores
             ids = [i for _, i in sorted(zip(scores, ids, strict=True), key=lambda x: -x[0])]
         ranked[q.qid] = ids
+        if reranker is not None and len(ranked) % 10 == 0:
+            log.info("reranked %d/%d questions", len(ranked), len(questions))
     res = score_run(index, ranked, questions)
     res["latency_ms_p50"] = float(np.percentile(lat, 50))
     res["ranked"] = ranked
@@ -136,7 +138,8 @@ def main(s: Settings, quick: bool = False) -> None:
         cache_p = OUT / f"rerank_cache_{best_c}.json"
         cache = json.loads(cache_p.read_text()) if cache_p.exists() else {}
         rr = Qwen3Reranker(s.model_dir / s.reranker_gguf, threads=s.threads)
-        for filt in ("auto_company", "none"):
+        log.info("reranking with %s", s.reranker_gguf)
+        for filt in ("auto_company",):  # one reranked run: ~35 s/question on 4 CPU cores
             t1 = time.perf_counter()
             res = run(idx, emb, questions, "rrf", filt, qvecs, reranker=rr, rerank_cache=cache)
             cache_p.write_text(json.dumps(cache))

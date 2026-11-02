@@ -12,10 +12,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-SYSTEM = (
-    "You are a financial analyst answering questions about SEC filings. Use ONLY the numbered passages "
-    "provided. Cite the passages you use like [1] or [2][3]. Show any arithmetic briefly. If the passages "
-    "do not contain enough information, reply exactly: INSUFFICIENT CONTEXT. Keep answers under 120 words."
+# The system prompt and the passage block are shared verbatim by the generator and the faithfulness
+# judge, so llama.cpp's prefix cache reuses the passage KV state and the judge only pays for its tail.
+SYSTEM = "You are a careful financial analyst working only from excerpts of SEC filings."
+ANSWER_INSTRUCTIONS = (
+    "Answer the question using ONLY the numbered passages above. Cite the passages you use like [1] or "
+    "[2][3]. Show any arithmetic briefly. If the passages do not contain enough information, reply exactly: "
+    "INSUFFICIENT CONTEXT. Keep the answer under 120 words."
 )
 
 _CITE = re.compile(r"\[(\d+)\]")
@@ -28,6 +31,10 @@ class Generation:
     prompt_tokens: int
     completion_tokens: int
     seconds: float
+
+
+def passages_block(passages: list[dict]) -> str:
+    return f"Passages:\n{format_context(passages)}\n\n"
 
 
 def format_context(passages: list[dict]) -> str:
@@ -63,7 +70,7 @@ class LocalGenerator:
         return r["choices"][0]["message"]["content"].strip(), r["usage"], time.perf_counter() - t0
 
     def answer(self, question: str, passages: list[dict]) -> Generation:
-        user = f"Passages:\n{format_context(passages)}\n\nQuestion: {question}"
+        user = f"{passages_block(passages)}{ANSWER_INSTRUCTIONS}\n\nQuestion: {question}"
         text, usage, secs = self.chat(SYSTEM, user)
         cited = sorted({int(c) for c in _CITE.findall(text) if 1 <= int(c) <= len(passages)})
         return Generation(text, cited, usage["prompt_tokens"], usage["completion_tokens"], secs)

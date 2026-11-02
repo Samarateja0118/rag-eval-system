@@ -19,7 +19,9 @@ class Settings:
     index_name: str = field(default_factory=lambda: _env("RAG_INDEX", "tok256"))
     redis_url: str = field(default_factory=lambda: _env("RAG_REDIS_URL", ""))
     embed_model: str = field(default_factory=lambda: _env("RAG_EMBED_MODEL", "all-MiniLM-L6-v2"))
-    reranker_gguf: str = field(default_factory=lambda: _env("RAG_RERANKER_GGUF", "qwen3-reranker-0.6b.gguf"))
+    reranker_gguf: str = field(
+        default_factory=lambda: _env("RAG_RERANKER_GGUF", "qwen3-reranker-0.6b-q8_0.gguf")
+    )
     llm_gguf: str = field(default_factory=lambda: _env("RAG_LLM_GGUF", "qwen3-4b-instruct-2507-q4_k_m.gguf"))
     judge_gguf: str = field(
         default_factory=lambda: _env("RAG_JUDGE_GGUF", "qwen3-4b-instruct-2507-q4_k_m.gguf")
