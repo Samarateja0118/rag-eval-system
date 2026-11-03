@@ -1,0 +1,34 @@
+{
+  "n": 150,
+  "correct": 0.36666666666666664,
+  "incorrect": 0.35333333333333333,
+  "abstained": 0.28,
+  "abstain_flag_rate": 0.43333333333333335,
+  "faithfulness_mean_per_answer": 0.7011544011544011,
+  "faithfulness_claim_level": 0.6953488372093023,
+  "answers_fully_faithful": 0.4117647058823529,
+  "n_judged_for_faithfulness": 85,
+  "numeric_grounding": 0.7832699619771863,
+  "numbers_checked": 263,
+  "evidence_in_context_rate": 0.58,
+  "correct_when_evidence_in_context": 0.45977011494252873,
+  "correct_when_evidence_missing": 0.23809523809523808,
+  "by_question_type": {
+    "domain-relevant": {
+      "n": 50,
+      "correct": 0.44
+    },
+    "metrics-generated": {
+      "n": 50,
+      "correct": 0.26
+    },
+    "novel-generated": {
+      "n": 50,
+      "correct": 0.4
+    }
+  },
+  "generate_s_p50": 35.9024224019995,
+  "generate_s_p95": 45.220526415000265,
+  "prompt_tokens_mean": 1770.0266666666666,
+  "completion_tokens_mean": 90.14666666666666
+}

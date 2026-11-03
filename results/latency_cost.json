@@ -1,0 +1,84 @@
+{
+  "machine": {
+    "cpu_count": 4,
+    "platform": "Linux-6.18.44-fc-v230-x86_64-with-glibc2.39",
+    "python": "3.11.15"
+  },
+  "n_search_queries": 20,
+  "search_ms": {
+    "p50": 4.949758000293514,
+    "p95": 8.965723299297679
+  },
+  "search_plus_rerank20_ms": {
+    "p50": 29437.940114999947,
+    "p95": 33158.553492450395
+  },
+  "rerank_stage_ms": {
+    "p50": 29434.332375500162,
+    "p95": 33155.23264380008
+  },
+  "embed_query_ms_p50": 0.5749199999627308,
+  "retrieve_ms_p50": 2.661821498804784,
+  "answer_cache_hit_ms": {
+    "backend": "RedisCache",
+    "p50": 0.13329850116861053,
+    "p95": 0.2650435496434511
+  },
+  "ask_full_ms": {
+    "n": 5,
+    "p50": 58027.27230399978,
+    "max": 61085.15291900039
+  },
+  "ask_cache_hit_ms": {
+    "n": 5,
+    "p50": 0.3593720011849655,
+    "max": 0.4158020001341356
+  },
+  "generate_ms_p50": 35902.4224019995,
+  "tokens_per_ask": {
+    "prompt_mean": 1770.0266666666666,
+    "completion_mean": 90.14666666666666
+  },
+  "cost_assumption_usd_per_hour": 0.17,
+  "cost_usd_per_1k": {
+    "search": 0.00023373857223608262,
+    "search_plus_rerank": 1.3901249498749977,
+    "ask_full": 2.7401767476888788,
+    "ask_cache_hit": 1.697034450040115e-05,
+    "search_cold": 0.0011025500402587973
+  },
+  "index": {
+    "fingerprint": "8ae6135eb46b3323",
+    "config": {
+      "name": "tok256",
+      "strategy": "tokens",
+      "size": 256,
+      "overlap": 32
+    },
+    "embed_model": "all-MiniLM-L6-v2",
+    "n_docs": 84,
+    "n_pages": 12013,
+    "n_chunks": 37514,
+    "tokens_per_chunk_mean": 254.83414192034974,
+    "tokens_per_chunk_p95": 256.0,
+    "frac_truncated_by_encoder": 0.8848696486644986,
+    "seconds": {
+      "extract": 0.3143538360000093,
+      "chunk": 25.064557167999965,
+      "embed": 797.410344686,
+      "bm25": 7.205338738999899
+    },
+    "built_at": "2026-11-02T19:20:35Z"
+  },
+  "search_cold_query_cache": {
+    "n": 150,
+    "search_cold_ms": {
+      "p50": 23.34811849959806,
+      "p95": 32.53249949993915
+    },
+    "embed_query_cold_ms_p50": 14.27858350052702,
+    "retrieve_ms_p50": 6.6254025005036965,
+    "retrieve_ms_p95": 12.985172550270361
+  },
+  "note": "search_ms / embed_query_ms_p50 above were measured with query vectors already in Redis from an earlier aborted run, i.e. they are warm-cache numbers; search_cold_query_cache is the cold measurement over all 150 questions with an empty in-process cache."
+}

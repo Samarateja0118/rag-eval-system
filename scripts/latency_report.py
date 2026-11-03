@@ -35,6 +35,7 @@ def pct(xs, p):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=50, help="questions for the search/rerank benchmarks")
+    ap.add_argument("--n-ask", type=int, default=5, help="questions for the true end-to-end /ask benchmark")
     ap.add_argument(
         "--usd-per-hour",
         type=float,
@@ -79,8 +80,19 @@ def main() -> None:
 
     gen_p = Path("results/generation/answers.jsonl")
     gen_rows = [json.loads(line) for line in open(gen_p)] if gen_p.exists() else []
-    ask_total = [r["timings_ms"]["total"] for r in gen_rows]
     ask_gen = [r["timings_ms"].get("generate", 0) for r in gen_rows]
+
+    # true end-to-end /ask on a few questions: first call misses the answer cache, second call hits it
+    from ragsys.generate import LocalGenerator
+
+    svc.generator = LocalGenerator(s.model_dir / s.llm_gguf, threads=s.threads)
+    ask_total, ask_hit = [], []
+    for q in qs[: args.n_ask]:
+        r1 = svc.ask(q.question)
+        r2 = svc.ask(q.question)
+        assert r2["cached"], "second identical ask should be a cache hit"
+        ask_total.append(r1["timings_ms"]["total"])
+        ask_hit.append(r2["timings_ms"]["total"])
     p_tok = [r["usage"]["prompt_tokens"] for r in gen_rows]
     c_tok = [r["usage"]["completion_tokens"] for r in gen_rows]
 
@@ -105,7 +117,16 @@ def main() -> None:
             "p50": pct(hit, 50),
             "p95": pct(hit, 95),
         },
-        "ask_full_ms": {"n": len(ask_total), "p50": pct(ask_total, 50), "p95": pct(ask_total, 95)},
+        "ask_full_ms": {
+            "n": len(ask_total),
+            "p50": pct(ask_total, 50),
+            "max": max(ask_total) if ask_total else None,
+        },
+        "ask_cache_hit_ms": {
+            "n": len(ask_hit),
+            "p50": pct(ask_hit, 50),
+            "max": max(ask_hit) if ask_hit else None,
+        },
         "generate_ms_p50": pct(ask_gen, 50),
         "tokens_per_ask": {
             "prompt_mean": float(np.mean(p_tok)) if p_tok else None,
@@ -116,7 +137,7 @@ def main() -> None:
             "search": pct(search, 50) * usd_per_ms * 1000,
             "search_plus_rerank": pct(rerank, 50) * usd_per_ms * 1000,
             "ask_full": pct(ask_total, 50) * usd_per_ms * 1000 if ask_total else None,
-            "ask_cache_hit": pct(hit, 50) * usd_per_ms * 1000,
+            "ask_cache_hit": pct(ask_hit, 50) * usd_per_ms * 1000 if ask_hit else None,
         },
         "index": svc.index.manifest,
     }

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -155,12 +156,46 @@ def main(s: Settings, limit: int | None = None) -> None:
                 None if faith is None else faith["faithfulness"],
                 row["wall_s"],
             )
-    summarize(out_p)
+    summarize(out_p, s.index_dir / "chunks.jsonl")
 
 
-def summarize(path: Path) -> dict:
+_NUM = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?")
+_CITE = re.compile(r"\[\d+\]")
+
+
+def answer_numbers(text: str) -> list[str]:
+    """Numbers in an answer worth checking: >=3 significant characters, not years, no citation markers."""
+    text = _CITE.sub(" ", text)
+    out = []
+    for m in _NUM.findall(text):
+        x = m.replace(",", "").rstrip(".")
+        if len(x.replace(".", "")) >= 3 and not re.fullmatch(r"(19|20)\d\d", x):
+            out.append(x)
+    return out
+
+
+def numeric_grounding(answer: str, context: str) -> tuple[int, int]:
+    """(numbers found verbatim in the passages, numbers checked). Deterministic cross-check on the LLM
+    judge. Computed values (ratios, growth rates) legitimately fail it, so it is a lower bound."""
+    ctx = context.replace(",", "")
+    nums = answer_numbers(answer)
+    return sum(x in ctx for x in nums), len(nums)
+
+
+def summarize(path: Path, chunks_path: Path | None = None) -> dict:
     rows = [json.loads(line) for line in open(path)]
     n = len(rows)
+    chunk_text = {}
+    if chunks_path and chunks_path.exists():
+        for line in open(chunks_path):
+            c = json.loads(line)
+            chunk_text[c["chunk_id"]] = c["text"]
+    grounded = checked = 0
+    for r in rows:
+        if r["abstained"] or not chunk_text:
+            continue
+        g, c = numeric_grounding(r["answer"], " ".join(chunk_text[p["chunk_id"]] for p in r["passages"]))
+        grounded, checked = grounded + g, checked + c
     fs = [
         r["faithfulness"]["faithfulness"]
         for r in rows
@@ -189,6 +224,8 @@ def summarize(path: Path) -> dict:
         "faithfulness_claim_level": sup / claims if claims else None,
         "answers_fully_faithful": float(np.mean([f == 1.0 for f in fs])) if fs else None,
         "n_judged_for_faithfulness": len(fs),
+        "numeric_grounding": grounded / checked if checked else None,
+        "numbers_checked": checked,
         "evidence_in_context_rate": len(ev) / n,
         "correct_when_evidence_in_context": acc(ev),
         "correct_when_evidence_missing": acc(nev),

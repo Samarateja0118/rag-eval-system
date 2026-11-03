@@ -116,11 +116,66 @@ statistically clear at n=150, because the CI touches zero.
 
 ### 4. Generation (all 150 questions)
 
-GENERATION_RESULTS
+Pipeline: tok256 chunks, hybrid RRF plus auto company filter, reranked top 20, **top 5 passages** go to
+Qwen3-4B-Instruct-2507 (Q4_K_M, temperature 0). It is told to cite passages and to say
+`INSUFFICIENT CONTEXT` when it can't answer. The judges are the same model with JSON-schema-constrained output.
+
+| Metric | Value | How it is computed |
+|---|---|---|
+| Correct | **36.7%** (55/150) | LLM judge vs FinanceBench gold answer (rounding and unit differences allowed) |
+| Incorrect | 35.3% (53/150) | |
+| Abstained | 28.0% (42/150) | judge verdict; 43% of answers contain the abstain phrase somewhere, often after a partial answer |
+| Gold evidence page in the 5 passages | 58.0% | page-level labels, no LLM |
+| Correct when evidence page in context / not | 46.0% / 23.8% | the second number is answers built from other pages that restate the figure |
+| Faithfulness, claim level | 0.695 (85 answers judged, abstentions skipped) | judge splits the answer into claims and marks each supported or not by the passages |
+| Answers with every claim supported | 41.2% | |
+| Numeric grounding | 78.3% of 263 numbers | deterministic: numbers in the answer (3+ digits, not years) found verbatim in the passages |
+| Correct by question type | domain-relevant 44%, novel 40%, metrics 26% | metrics questions need multi-line arithmetic over statements |
+
+Judge reliability, checked by hand ([`results/generation_spotcheck.md`](results/generation_spotcheck.md)):
+- The **correctness** judge agreed with my reading on 15 of 16 sampled verdicts. The one exception was a
+  strict call on a "Yes" answer that matched the gold conclusion.
+- The **faithfulness** judge is weaker. In the first 30 answers it disagreed with the verbatim number check on
+  10 of 22 number-bearing claims. On reading the passages, it wrongly rejected 4 numbers that were in a table
+  and wrongly accepted 1 set of made-up numbers. Read the 0.695 as a noisy, probably low estimate. The numeric
+  grounding rate is the more trustworthy companion number.
+
+For context only, not a like-for-like comparison: the FinanceBench paper (Islam et al., 2023) reports that
+GPT-4-Turbo with a shared vector store got 19% of these questions right. Its setup, corpus size (all 361
+filings) and grading (human) differ from this repo's.
 
 ### 5. Latency and cost
 
-LATENCY_RESULTS
+Single request at a time, 4 cores, idle VM ([`results/latency_cost.json`](results/latency_cost.json)).
+Produced by `scripts/latency_report.py`.
+
+| Stage / path | p50 | p95 | n |
+|---|---|---|---|
+| Query embedding (MiniLM ONNX, cold) | 14 ms | | 150 |
+| BM25 + dense + RRF with filter mask (37.5k chunks) | 6.6 ms | 13 ms | 150 |
+| **Search, cold** (filter extraction + embed + retrieve) | **23 ms** | 33 ms | 150 |
+| Rerank top 20 (Qwen3-Reranker-0.6B Q8_0, ~8k tokens) | 29.4 s | 33.2 s | 20 |
+| Generate (Qwen3-4B Q4_K_M, ~1,770 prompt + ~90 output tokens) | 35.9 s | 45.2 s | 150 |
+| **Full /ask, answer-cache miss** | **58.0 s** | max 61.1 s | 5 |
+| **Full /ask, answer-cache hit (Redis)** | **0.36 ms** | max 0.42 ms | 5 |
+
+Cost, assuming the whole 4-vCPU VM costs **$0.17/hour** (an assumed on-demand price, not a bill; pass
+`--usd-per-hour` for yours) and serves one request at a time:
+
+| Path | $ per 1,000 requests |
+|---|---|
+| Search only | $0.001 |
+| Search + rerank | $1.39 |
+| Full /ask (miss) | $2.74 |
+| Full /ask (cache hit) | under $0.0001 |
+| One-time indexing of the corpus (tok256: 2.5 min PDF extraction + 13.9 min embedding/BM25) | about $0.05 total |
+
+Where the time goes: on CPU, the **two LLM stages are about 99.9% of latency.** Retrieval is cheap. The
+reranker costs as much as generation, and it buys the largest quality gain in this repo (MRR +0.155). That
+makes the obvious levers a GPU, reranking 10 instead of 20 candidates, or a smaller cross-encoder. None of
+them were measured here. For repeated questions (dashboards, FAQ-style traffic), the answer cache turns a
+58-second request into a sub-millisecond Redis read. The cache key includes the index fingerprint and
+pipeline config, so a re-index invalidates it automatically.
 
 ## Failure cases
 
@@ -144,7 +199,18 @@ LATENCY_RESULTS
    still indexes them). tok512 loses half of every chunk, and page chunks lose most of the page, which is
    part of why their dense numbers are not better despite more text.
 
-GENERATION_FAILURES
+Generation-side failures (from `results/generation/answers.jsonl`):
+
+6. **Arithmetic on the wrong line items.** Metrics questions score lowest (26%). Examples: J&J's Q2 net margin was
+   computed from the wrong lines (14.6% vs gold 20.1%). Lockheed's 2-year revenue CAGR used the right formula
+   and inputs but got the arithmetic wrong (0.9% vs gold 0.4%). And
+   Kraft Heinz's inventory turnover was abstained because the prior-year inventory sat in a passage that wasn't
+   retrieved.
+7. **Made-up inputs dressed up as arithmetic.** For AES ROA the model wrote "(7,575 + 7,525)/2", and neither
+   number appears in any passage. For General Mills it backed "current liabilities" out of an unrelated cash-flow line. The faithfulness judge
+   accepted the AES case, which is exactly the failure a weak judge lets through.
+8. **Right facts, wrong direction.** For 3M it wrote "PP&E $9,178M in 2022, up from $9,429M", which is a fall,
+   and concluded "capital-intensive" when the gold answer says no.
 
 ## What was and was not measured
 
@@ -166,8 +232,10 @@ Not measured, or weaker than it looks:
   load test.
 - **Cost is computed from wall-clock time and an assumed VM price** (`--usd-per-hour`, default $0.17 for a
   4-vCPU on-demand VM). It is not a cloud bill. Prices vary by provider and region.
-- **The Docker image build is checked in CI**, but the measured numbers came from a Python 3.11 venv on the
-  VM, not from inside the containers.
+- **Docker:** the image is built in GitHub Actions CI. The development VM could not build it, because
+  container builds there had no network. All measured numbers came from a Python 3.11 venv on the VM plus a
+  Redis 7.4 container, not from the full Compose stack. The API itself was exercised locally (`/healthz`,
+  filtered `/search`, filter validation, `/stats`).
 - Only the 84 filings the questions reference are indexed, not all 361 FinanceBench filings, so there are
   fewer distractor documents than a production corpus would have.
 
@@ -180,7 +248,7 @@ bash scripts/fetch_models.sh            # ~4.3 GB: MiniLM ONNX + Qwen3 reranker 
 python -m ragsys.cli fetch              # FinanceBench metadata + 84 PDFs (159 MB)
 python -m ragsys.cli build              # all 5 chunk configs (~55 min on 4 cores); --config tok256 for one
 python -m ragsys.cli eval-retrieval     # ~5 min, plus ~85 min for the reranker run (--quick skips it)
-python -m ragsys.cli eval-generation    # see timings above
+python -m ragsys.cli eval-generation    # ~80 s/question; reuses the reranked top-5 lists from eval-retrieval
 python scripts/latency_report.py
 python -m ragsys.cli ask "What was Adobe's FY2022 operating margin?"
 
