@@ -1,5 +1,7 @@
 # rag-eval-system
 
+[![ci](https://github.com/Samarateja0118/rag-eval-system/actions/workflows/ci.yml/badge.svg)](https://github.com/Samarateja0118/rag-eval-system/actions/workflows/ci.yml)
+
 A retrieval-augmented generation (RAG) system over **real SEC filings**, built to be measured. It covers ingestion,
 hybrid search (BM25 + dense embeddings), metadata filters, a cross-encoder reranker, a cache, a local LLM
 generator, and an eval harness that scores retrieval (Recall@k, MRR) and generation (faithfulness, correctness).
@@ -7,6 +9,13 @@ Everything runs on CPU, with open weights and no paid API.
 
 All numbers below come from running this repo on a 4-core x86 VM (Intel Xeon 2.1 GHz, AVX-512, no GPU, 15 GB RAM).
 Raw per-question outputs are in [`results/`](results/).
+
+**At a glance** (150 FinanceBench questions over 84 real filings, CPU only; details and confidence intervals in [Results](#results)):
+
+- Hybrid BM25 + dense retrieval with a Qwen3 cross-encoder reranker: **Recall@5 0.540, MRR@10 0.416**, up from 0.340 / 0.261 for hybrid search alone.
+- Hybrid beats BM25 alone by +0.084 MRR@10 (95% CI [+0.042, +0.126]); its edge over dense-only is not statistically significant.
+- Generation with a 4B local model: 36.7% of answers correct, 78.3% of cited numbers found verbatim in the retrieved passages.
+- Biggest failure, measured: 28% of top-1 results come from the wrong filing of the right company.
 
 ## Corpus and labels
 
